@@ -1,0 +1,2050 @@
+<!DOCTYPE html>
+<html lang="en"><head><script type="application/json" id="cowork-artifact-meta">
+{
+  "name": "Kids Schedule Calendar",
+  "schemaVersion": 1,
+  "description": "Interactive calendar view of Axel and Anja's after-school activities with color-coded schedules, overlap detection, and ability to add/edit registered and possible activities",
+  "mcpTools": [],
+  "mcpServerNames": []
+}
+</script>
+
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kids' After-School Schedule</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 15px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #333;
+        }
+
+        .add-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        .add-btn:hover {
+            background: #45a049;
+        }
+
+        .calendar-wrapper {
+            overflow-x: auto;
+        }
+
+        .calendar {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            min-width: 1320px;
+        }
+
+        .cal-header {
+            display: grid;
+            grid-template-columns: 70px repeat(7, 1fr);
+            background: #333;
+        }
+
+        .cal-header .corner {
+            background: #333;
+        }
+
+        .day-header {
+            background: #333;
+            color: white;
+            padding: 12px 8px;
+            font-weight: 600;
+            text-align: center;
+            font-size: 14px;
+            border-left: 1px solid rgba(255,255,255,0.15);
+        }
+
+        .cal-body {
+            display: grid;
+            grid-template-columns: 70px repeat(7, 1fr);
+            background: white;
+        }
+
+        .time-gutter {
+            position: relative;
+            background: #f9f9f9;
+            border-right: 1px solid #ddd;
+        }
+
+        .hour-label {
+            position: absolute;
+            right: 8px;
+            transform: translateY(-50%);
+            font-size: 11px;
+            font-weight: 600;
+            color: #666;
+            white-space: nowrap;
+        }
+
+        .day-column {
+            position: relative;
+            border-left: 1px solid #eee;
+        }
+
+        .school-block {
+            position: absolute;
+            left: 0;
+            right: 0;
+            background: repeating-linear-gradient(
+                45deg,
+                #e4e4e4, #e4e4e4 6px,
+                #dcdcdc 6px, #dcdcdc 12px
+            );
+            border-bottom: 1px solid #c4c4c4;
+            pointer-events: none;
+            z-index: 1;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .school-block span {
+            font-size: 10px;
+            font-weight: 600;
+            color: #8a8a8a;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            padding-bottom: 3px;
+            white-space: nowrap;
+        }
+
+        .school-block.partial {
+            right: auto;
+            background: repeating-linear-gradient(
+                45deg,
+                #ececec, #ececec 6px,
+                #e3e3e3 6px, #e3e3e3 12px
+            );
+        }
+
+        .hour-line {
+            position: absolute;
+            left: 0;
+            right: 0;
+            border-top: 1px solid #eee;
+            pointer-events: none;
+        }
+
+        .activity {
+            position: absolute;
+            border-radius: 5px;
+            padding: 5px 7px;
+            font-size: 11px;
+            cursor: pointer;
+            border-left: 4px solid;
+            transition: box-shadow 0.15s;
+            overflow: hidden;
+            box-sizing: border-box;
+            z-index: 2;
+            /* Registered classes: clean white text on the vivid fill, no shadow --
+               a shadow raises the measured contrast but makes the glyph edges
+               shimmer, which reads as harder to see, not easier. */
+            color: #FFFFFF;
+        }
+
+        /*
+         * Possible (not yet registered) classes: pale fill, with a deep version of
+         * the same hue for the text (each clears 9:1). The dashed edge keeps them
+         * distinguishable from registered classes even when squeezed narrow.
+         */
+        .activity.possible {
+            border-style: dashed;
+            border-top: 1px dashed;
+            border-right: 1px dashed;
+            border-bottom: 1px dashed;
+        }
+
+        .conflict-badge {
+            position: absolute;
+            top: 2px;
+            right: 3px;
+            font-size: 11px;
+            line-height: 1;
+        }
+
+        .lane-divider {
+            position: absolute;
+            width: 0;
+            border-left: 1px dashed #c9c9c9;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .activity:hover {
+            box-shadow: 0 3px 12px rgba(0,0,0,0.35);
+            left: var(--hover-left) !important;
+            width: var(--hover-width) !important;
+            z-index: 50 !important;
+        }
+
+        /* Cascaded (3+ overlapping) blocks get an edge so the fan is readable */
+        .activity.cascaded {
+            box-shadow: -2px 0 0 rgba(255,255,255,0.9);
+        }
+
+        .activity:hover .activity-business,
+        .activity:hover .activity-time {
+            display: block;
+        }
+
+        .activity.compact .activity-business,
+        .activity.compact .activity-time {
+            display: none;
+        }
+
+        /*
+         * Palette. Registered classes carry white text on the vivid fill; possible
+         * classes are that same hue mixed toward white, with a deep version of the
+         * hue for text. All block text is 14px bold either way.
+         */
+        .activity-axel-registered {
+            background: #0091FF;
+            border-left-color: #005494;
+        }
+
+        .activity-axel-possible {
+            background: #9ED5FF;
+            color: #002947;
+            border-left-color: #0091FF;
+        }
+
+        .activity-anja-registered {
+            background: #10BEAC;
+            border-left-color: #096E64;
+        }
+
+        .activity-anja-possible {
+            background: #A4E6DF;
+            color: #043530;
+            border-left-color: #10BEAC;
+        }
+
+        /* Both kids attending the same class */
+        .activity-both-registered {
+            background: #DB34F2;
+            border-left-color: #7F1E8C;
+        }
+
+        .activity-both-possible {
+            background: #F1B2FA;
+            color: #3D0F44;
+            border-left-color: #DB34F2;
+        }
+
+        .activity-name {
+            font-weight: 700;
+            font-size: 14px;
+            line-height: 1.2;
+            margin-bottom: 2px;
+        }
+
+        .activity-business {
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .activity-time {
+            font-size: 12px;
+            font-weight: 700;
+            margin-top: 2px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+
+        .modal-content h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            color: #555;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+        }
+
+        .form-group.checkbox-group {
+            margin-bottom: 20px;
+        }
+
+        .time-picker {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .time-picker select {
+            width: auto;
+            flex: 1;
+        }
+
+        .time-sep {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+
+        .form-group .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 14px;
+        }
+
+        .form-group .checkbox-group .checkbox-label {
+            margin-bottom: 0;
+            font-size: 14px;
+        }
+
+        .checkbox-label input[type="checkbox"] {
+            width: auto;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 25px;
+        }
+
+        .modal-buttons button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-save {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-save:hover {
+            background: #45a049;
+        }
+
+        .btn-cancel {
+            background: #ddd;
+            color: #333;
+        }
+
+        .btn-cancel:hover {
+            background: #ccc;
+        }
+
+        .btn-delete {
+            background: #f44336;
+            color: white;
+            margin-right: auto;
+        }
+
+        .btn-delete:hover {
+            background: #da190b;
+        }
+
+        .btn-confirm {
+            background: #2196F3;
+            color: white;
+            margin-right: auto;
+        }
+
+        .btn-confirm:hover {
+            background: #0b7dda;
+        }
+
+        .legend {
+            display: flex;
+            gap: 30px;
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 2px solid #eee;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+        .legend-box {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            border-left: 4px solid;
+        }
+
+        .legend-box.dashed {
+            border: 1px dashed;
+            border-left-width: 4px;
+        }
+
+        .school-hours {
+            background: #f0f0f0;
+            opacity: 0.4;
+            border: 1px dashed #999;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .filter-label {
+            font-size: 13px;
+            color: #777;
+            margin-right: 4px;
+        }
+
+        .filter-btn {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            color: #555;
+            padding: 6px 14px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .filter-btn:hover { background: #e6e6e6; }
+
+        .filter-btn.active {
+            background: #333;
+            border-color: #333;
+            color: white;
+        }
+
+        .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .ghost-btn {
+            background: white;
+            border: 1px solid #ccc;
+            color: #555;
+            padding: 6px 14px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        .ghost-btn:hover { background: #f2f2f2; }
+
+        .save-status {
+            font-size: 12px;
+            color: #8a8a8a;
+            min-width: 42px;
+        }
+
+        .save-status.warn { color: #B26A00; }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(12px);
+            background: #303030;
+            color: white;
+            padding: 11px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s, transform 0.25s;
+            z-index: 2000;
+        }
+
+        .toast.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 13px;
+            color: #555;
+            cursor: pointer;
+        }
+
+        /* Warning banners live here: under the colour key, above School end times */
+        .banner-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .banner-stack:empty { display: none; }
+
+        .conflict-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .conflict-section {
+            padding: 12px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .banner-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .dismiss-btn {
+            flex-shrink: 0;
+            background: rgba(255,255,255,0.9);
+            border: 1px solid rgba(0,0,0,0.15);
+            color: #444;
+            padding: 4px 14px;
+            border-radius: 14px;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        .dismiss-btn:hover {
+            background: white;
+            border-color: rgba(0,0,0,0.3);
+        }
+
+        .restore-row {
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        .restore-btn {
+            background: none;
+            border: none;
+            color: #7a7a7a;
+            font-size: 12px;
+            font-family: inherit;
+            text-decoration: underline;
+            cursor: pointer;
+            padding: 2px 0;
+        }
+
+        .restore-btn:hover { color: #333; }
+
+        .conflict-section.hard {
+            background: #FDECEA;
+            border-left: 4px solid #D93025;
+        }
+
+        .conflict-section.soft {
+            background: #F3F0FA;
+            border-left: 4px solid #8E7CC3;
+        }
+
+        .conflict-section h3 {
+            font-size: 13px;
+        }
+
+        .conflict-section.hard h3 { color: #A31B12; }
+        .conflict-section.soft h3 { color: #5B4B8A; }
+
+        .conflict-section ul {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .conflict-section li {
+            color: #444;
+            line-height: 1.5;
+        }
+
+        .conflict-window {
+            display: inline-block;
+            background: rgba(255,255,255,0.85);
+            border-radius: 10px;
+            padding: 1px 8px;
+            margin: 0 6px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .options-section {
+            padding: 12px 14px;
+            border-radius: 6px;
+            background: #F4F7F6;
+            border-left: 4px solid #9AA8A5;
+            font-size: 13px;
+        }
+
+        .options-section h3 {
+            font-size: 13px;
+            color: #4E5C59;
+            margin-bottom: 8px;
+        }
+
+        .options-section ul {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+
+        .options-section li {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            color: #444;
+        }
+
+        .kid-tag {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 10px;
+            color: white;
+        }
+
+        .kid-tag.axel { background: #0091FF; color: #FFFFFF; }
+        .kid-tag.anja { background: #10BEAC; color: #FFFFFF; }
+        .kid-tag.both { background: #DB34F2; color: #FFFFFF; }
+
+        .option-chip {
+            background: white;
+            border: 1px dashed #b5c2bf;
+            border-radius: 12px;
+            padding: 2px 10px;
+            cursor: pointer;
+        }
+
+        .option-chip.registered {
+            border-style: solid;
+            border-color: #7f9a95;
+            font-weight: 600;
+        }
+
+        .option-chip:hover { background: #EAF0EF; }
+
+        .option-chip em {
+            font-style: normal;
+            color: #777;
+            font-size: 11px;
+            margin-left: 5px;
+        }
+
+        .activity.conflict-hard {
+            box-shadow: inset 0 0 0 2px #D93025;
+        }
+
+        .activity.narrow {
+            padding: 4px 5px;
+        }
+
+        .activity.narrow .activity-business,
+        .activity.narrow .activity-time {
+            display: none;
+        }
+
+        .outside-notice {
+            padding: 10px 12px;
+            background: #FFF8E1;
+            border-left: 4px solid #FFB300;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #7A5200;
+            line-height: 1.8;
+        }
+
+        .outside-chip {
+            display: inline-block;
+            background: white;
+            border: 1px solid #FFCC66;
+            border-radius: 12px;
+            padding: 2px 10px;
+            margin-right: 6px;
+            cursor: pointer;
+        }
+
+        .outside-chip:hover {
+            background: #FFF3CD;
+        }
+
+        .note {
+            margin-top: 15px;
+            padding: 12px;
+            background: #E3F2FD;
+            border-left: 4px solid #2196F3;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #1565C0;
+            line-height: 1.5;
+        }
+
+        .delete-btn-small {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .delete-btn-small:hover {
+            background: #ee5a52;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📅 Kids' After-School Schedule</h1>
+            <button class="add-btn" onclick="openModal()">+ Add Activity</button>
+        </div>
+
+        <div class="toolbar">
+            <div class="filter-group">
+                <span class="filter-label">Show:</span>
+                <button class="filter-btn active" data-kid="all" onclick="setKidFilter('all')">Both kids</button>
+                <button class="filter-btn" data-kid="axel" onclick="setKidFilter('axel')">Axel only</button>
+                <button class="filter-btn" data-kid="anja" onclick="setKidFilter('anja')">Anja only</button>
+            </div>
+            <div class="toolbar-right">
+                <label class="toggle-label">
+                    <input type="checkbox" checked="checked" onchange="togglePossibilities(this)">
+                    Include possibilities
+                </label>
+                <span class="save-status" id="saveStatus"></span>
+                <button class="ghost-btn" onclick="exportShareablePage()" title="Download this page with all your classes baked in — send it to anyone">Share / Download</button>
+                <label class="ghost-btn" title="Load a schedule someone sent you (.html or .json)">
+                    Open file
+                    <input type="file" accept=".html,.json,text/html,application/json" onchange="importSchedule(this)" hidden="">
+                </label>
+            </div>
+        </div>
+
+        <div class="calendar-wrapper">
+            <div class="calendar" id="calendar"></div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-box" style="background: #0091FF; border-left-color: #005494;"></div>
+                <span>Axel — Registered</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box dashed" style="background: #9ED5FF; border-color: #0091FF;"></div>
+                <span>Axel — Possible</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #10BEAC; border-left-color: #096E64;"></div>
+                <span>Anja — Registered</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box dashed" style="background: #A4E6DF; border-color: #10BEAC;"></div>
+                <span>Anja — Possible</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #DB34F2; border-left-color: #7F1E8C;"></div>
+                <span>Both kids — Registered</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box dashed" style="background: #F1B2FA; border-color: #DB34F2;"></div>
+                <span>Both kids — Possible</span>
+            </div>
+        </div>
+
+        <!-- Banner stack: sits below the colour key and above School end times -->
+        <div class="banner-stack">
+            <div class="conflict-panel" id="conflictPanel" style="display: none;"></div>
+            <div class="conflict-panel" id="optionsPanel" style="display: none;"></div>
+            <div class="outside-notice" id="outsideNotice" style="display: none;"></div>
+            <div class="restore-row" id="restoreRow" style="display: none;"></div>
+        </div>
+
+        <div class="note">
+            <strong>School end times:</strong> Axel: 2:40 PM (Mon-Fri), 1:25 PM (Thu) | Anja: 3:00 PM (Mon-Fri), 1:45 PM (Thu)
+        </div>
+    </div>
+
+    <!-- Classes travel with the file. "Share / Download" rewrites this block, so a
+         copy you send someone already contains everything you've entered. -->
+    <script id="scheduleData" type="application/json">[]</script>
+
+    <div class="toast" id="toast"></div>
+
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <h2 id="modalTitle">Add Activity</h2>
+            <form onsubmit="saveActivity(event)">
+                <div class="form-group">
+                    <label for="activityName">Activity Name *</label>
+                    <input type="text" id="activityName" required="" placeholder="e.g., Soccer Practice">
+                </div>
+
+                <div class="form-group">
+                    <label for="business">Business/Organization *</label>
+                    <input type="text" id="business" required="" placeholder="e.g., Youth Sports Center">
+                </div>
+
+                <div class="form-group">
+                    <label>Select Days *</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="day" value="Monday"> Monday
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="day" value="Tuesday"> Tuesday
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="day" value="Wednesday"> Wednesday
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="day" value="Thursday"> Thursday
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="day" value="Friday"> Friday
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="day" value="Saturday"> Saturday
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="day" value="Sunday"> Sunday
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Start Time *</label>
+                    <div class="time-picker">
+                        <select id="startHour" required=""><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option></select>
+                        <span class="time-sep">:</span>
+                        <select id="startMinute" required=""><option value="00">00</option><option value="05">05</option><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="25">25</option><option value="30">30</option><option value="35">35</option><option value="40">40</option><option value="45">45</option><option value="50">50</option><option value="55">55</option></select>
+                        <select id="startPeriod" required="">
+                            <option value="AM">AM</option>
+                            <option value="PM" selected="">PM</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>End Time *</label>
+                    <div class="time-picker">
+                        <select id="endHour" required=""><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option></select>
+                        <span class="time-sep">:</span>
+                        <select id="endMinute" required=""><option value="00">00</option><option value="05">05</option><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="25">25</option><option value="30">30</option><option value="35">35</option><option value="40">40</option><option value="45">45</option><option value="50">50</option><option value="55">55</option></select>
+                        <select id="endPeriod" required="">
+                            <option value="AM">AM</option>
+                            <option value="PM" selected="">PM</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="child">For Which Child? *</label>
+                    <select id="child" required="">
+                        <option value="">-- Select --</option>
+                        <option value="axel">Axel</option>
+                        <option value="anja">Anja</option>
+                        <option value="both">Both</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="location">Location/Address</label>
+                    <input type="text" id="location" placeholder="e.g., 123 Main St, City">
+                </div>
+
+                <div class="form-group">
+                    <label for="notes">Notes</label>
+                    <textarea id="notes" placeholder="e.g., Drop-off in front, bring water bottle" style="min-height: 80px; resize: vertical;"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="isRegistered" checked="">
+                        Registered (vs. Possible/Option)
+                    </label>
+                </div>
+
+                <div class="modal-buttons">
+                    <button type="button" class="btn-delete" id="deleteBtn" style="display: none;" onclick="deleteActivity()">Delete</button>
+                    <button type="button" class="btn-confirm" id="confirmBtn" style="display: none;" onclick="confirmActivity()">Confirm &amp; Register</button>
+                    <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn-save">Save Activity</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        const DAY_START = 13 * 60;  // 1 PM
+        const DAY_END = 21 * 60;    // 9 PM
+        const HOUR_HEIGHT = 80;     // pixels per hour
+
+        // When each kid gets out of school. null = no school that day.
+        const SCHOOL_END = {
+            Monday:    { axel: '14:40', anja: '15:00' },
+            Tuesday:   { axel: '14:40', anja: '15:00' },
+            Wednesday: { axel: '14:40', anja: '15:00' },
+            Thursday:  { axel: '13:25', anja: '13:45' },
+            Friday:    { axel: '14:40', anja: '15:00' },
+            Saturday:  null,
+            Sunday:    null
+        };
+
+        let activities = [];
+        let editingActivityId = null;
+
+        // View filters
+        let kidFilter = 'all';          // 'all' | 'axel' | 'anja'
+        let showPossibilities = true;
+
+        /*
+         * Warnings the user has waved off. Keyed by the exact clash — which two
+         * classes, which day, which overlapping minutes — so dismissing "Jiu Jitsu vs
+         * Ballet on Monday" hides only that. Change either class's time and the key no
+         * longer matches, so the warning correctly comes back.
+         */
+        let dismissedConflicts = new Set();
+
+        function conflictKey(c) {
+            return [c.a.id, c.b.id].sort().join('-') + '|' + c.day + '|' + c.start + '|' + c.end;
+        }
+
+        function dismissConflicts(severity) {
+            findConflicts()
+                .filter(c => c.severity === severity)
+                .forEach(c => dismissedConflicts.add(conflictKey(c)));
+            renderCalendar();
+        }
+
+        function restoreConflicts() {
+            dismissedConflicts.clear();
+            renderCalendar();
+        }
+
+        /*
+         * A class both kids attend should be one purple entry, not a blue one and a
+         * teal one sitting on top of each other. This collapses any Axel/Anja pair
+         * that is unambiguously the same class -- same name, business, times, days
+         * and registration status -- into a single "both" entry.
+         * Returns how many pairs were merged.
+         */
+        function mergeBothKidsClasses() {
+            const signature = a => [
+                a.name.trim().toLowerCase(),
+                (a.business || '').trim().toLowerCase(),
+                a.startTime,
+                a.endTime,
+                [...a.days].sort().join(','),
+                a.isRegistered
+            ].join('|');
+
+            const byKid = { axel: new Map(), anja: new Map() };
+            activities.forEach(a => {
+                if (a.child === 'axel' || a.child === 'anja') {
+                    const key = signature(a);
+                    if (!byKid[a.child].has(key)) byKid[a.child].set(key, a);
+                }
+            });
+
+            const removeIds = new Set();
+            let merged = 0;
+
+            byKid.axel.forEach((axelAct, key) => {
+                const anjaAct = byKid.anja.get(key);
+                if (!anjaAct) return;
+
+                axelAct.child = 'both';
+                // Keep whichever location/notes were actually filled in
+                axelAct.location = axelAct.location || anjaAct.location || '';
+                axelAct.notes = [axelAct.notes, anjaAct.notes]
+                    .filter(n => n && n.trim())
+                    .filter((n, i, arr) => arr.indexOf(n) === i)
+                    .join(' / ');
+                removeIds.add(anjaAct.id);
+                merged++;
+            });
+
+            if (removeIds.size) {
+                activities = activities.filter(a => !removeIds.has(a.id));
+            }
+            return merged;
+        }
+
+        function visibleActivities() {
+            return activities.filter(a => {
+                if (!showPossibilities && !a.isRegistered) return false;
+                if (kidFilter === 'all') return true;
+                return a.child === kidFilter || a.child === 'both';
+            });
+        }
+
+        function setKidFilter(value) {
+            kidFilter = value;
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.kid === value);
+            });
+            renderCalendar();
+        }
+
+        function togglePossibilities(checkbox) {
+            showPossibilities = checkbox.checked;
+            renderCalendar();
+        }
+
+        function timeToMinutes(time) {
+            const [hours, mins] = time.split(':').map(Number);
+            return hours * 60 + mins;
+        }
+
+        function minutesToTime(mins) {
+            const hours = Math.floor(mins / 60);
+            const minutes = mins % 60;
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+        }
+
+        // Convert a 24-hour "HH:MM" value into American AM/PM format, e.g. "3:45 PM"
+        function formatTime(time) {
+            if (!time) return '';
+            const [hours, mins] = time.split(':').map(Number);
+            const period = hours >= 12 ? 'PM' : 'AM';
+            let displayHour = hours % 12;
+            if (displayHour === 0) displayHour = 12;
+            return `${displayHour}:${String(mins).padStart(2, '0')} ${period}`;
+        }
+
+        // Format a whole hour (0-23) for the calendar's time column, e.g. "1 PM"
+        function formatHour(hour) {
+            const period = hour >= 12 ? 'PM' : 'AM';
+            let displayHour = hour % 12;
+            if (displayHour === 0) displayHour = 12;
+            return `${displayHour} ${period}`;
+        }
+
+        // Build a 24-hour "HH:MM" value from the AM/PM dropdowns
+        function to24Hour(hour12, minute, period) {
+            let h = parseInt(hour12, 10) % 12;
+            if (period === 'PM') h += 12;
+            return `${String(h).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        }
+
+        // Set a trio of AM/PM dropdowns from a 24-hour "HH:MM" value
+        function setTimePicker(prefix, time) {
+            const [h, m] = (time || '15:00').split(':').map(Number);
+            let hour12 = h % 12;
+            if (hour12 === 0) hour12 = 12;
+            document.getElementById(prefix + 'Hour').value = String(hour12);
+            document.getElementById(prefix + 'Minute').value = String(m).padStart(2, '0');
+            document.getElementById(prefix + 'Period').value = h >= 12 ? 'PM' : 'AM';
+        }
+
+        // Read a 24-hour "HH:MM" value out of a trio of AM/PM dropdowns
+        function readTimePicker(prefix) {
+            return to24Hour(
+                document.getElementById(prefix + 'Hour').value,
+                document.getElementById(prefix + 'Minute').value,
+                document.getElementById(prefix + 'Period').value
+            );
+        }
+
+        // Fill the hour (1-12) and minute (5-minute steps) dropdowns
+        function populateTimePickers() {
+            ['start', 'end'].forEach(prefix => {
+                const hourSelect = document.getElementById(prefix + 'Hour');
+                hourSelect.innerHTML = '';
+                for (let h = 1; h <= 12; h++) {
+                    const opt = document.createElement('option');
+                    opt.value = String(h);
+                    opt.textContent = String(h);
+                    hourSelect.appendChild(opt);
+                }
+
+                const minuteSelect = document.getElementById(prefix + 'Minute');
+                minuteSelect.innerHTML = '';
+                for (let m = 0; m < 60; m += 5) {
+                    const opt = document.createElement('option');
+                    opt.value = String(m).padStart(2, '0');
+                    opt.textContent = String(m).padStart(2, '0');
+                    minuteSelect.appendChild(opt);
+                }
+            });
+        }
+
+        // Does this item belong to a given kid? ("both" counts for each of them)
+        function belongsTo(item, kid) {
+            return item.activity.child === kid || item.activity.child === 'both';
+        }
+
+        // Greedy interval packing: give each item the leftmost free sub-column.
+        // Writes .slot / .slotCount into the supplied key names.
+        function packColumns(list, slotKey, countKey) {
+            const columnEnds = [];
+            list.forEach(item => {
+                let placed = false;
+                for (let c = 0; c < columnEnds.length; c++) {
+                    if (item.start >= columnEnds[c]) {
+                        item[slotKey] = c;
+                        columnEnds[c] = item.end;
+                        placed = true;
+                        break;
+                    }
+                }
+                if (!placed) {
+                    item[slotKey] = columnEnds.length;
+                    columnEnds.push(item.end);
+                }
+            });
+            list.forEach(item => { item[countKey] = Math.max(1, columnEnds.length); });
+            return Math.max(1, columnEnds.length);
+        }
+
+        /*
+         * Place a set of overlapping classes inside a horizontal lane.
+         *
+         * Two overlapping classes split the lane evenly (clean, iOS-style). Three or
+         * more would each become an unreadable sliver, so instead they cascade: every
+         * block keeps half the lane's width and is stepped to the right, like a fanned
+         * deck of cards. Each one's left edge — where the class name sits — stays
+         * visible, and hovering any block expands it to the full lane.
+         */
+        function assignGeometry(list, laneLeft, laneWidth) {
+            const cols = packColumns(list, 'slot', 'slotCount');
+            const blockWidth = laneWidth / Math.min(cols, 2);
+            const step = cols > 1 ? (laneWidth - blockWidth) / (cols - 1) : 0;
+
+            list.forEach(item => {
+                item.left = laneLeft + item.slot * step;
+                item.width = blockWidth;
+                item.z = 2 + item.slot;
+                item.hoverLeft = laneLeft;
+                item.hoverWidth = laneWidth;
+                item.cascaded = cols > 2;
+            });
+        }
+
+        // Group items into clusters of activities that overlap in time
+        function buildClusters(items) {
+            const clusters = [];
+            let current = [];
+            let clusterEnd = -1;
+
+            items.forEach(item => {
+                if (current.length && item.start >= clusterEnd) {
+                    clusters.push(current);
+                    current = [];
+                    clusterEnd = -1;
+                }
+                current.push(item);
+                clusterEnd = Math.max(clusterEnd, item.end);
+            });
+            if (current.length) clusters.push(current);
+            return clusters;
+        }
+
+        /*
+         * Layout strategy, tuned for the two questions this calendar has to answer:
+         *
+         *  1. "Are both kids busy at once?"  -> whenever a set of overlapping classes
+         *     involves both kids, the column splits into a fixed Axel lane (left) and
+         *     Anja lane (right). Because the sides are always consistent, anything
+         *     showing up on the left AND right at the same height is a driving problem.
+         *
+         *  2. "What are my options for this slot?" -> classes for the SAME kid that
+         *     overlap simply share that kid's lane, packed side by side like iOS.
+         *     They read as a menu of alternatives, not as a conflict.
+         *
+         * When a cluster only involves one kid, it uses the column's full width, so
+         * nothing is squeezed for no reason.
+         */
+        function layoutDay(items) {
+            items.sort((a, b) => a.start - b.start || b.end - a.end);
+
+            buildClusters(items).forEach(cluster => {
+                const axelSide = cluster.filter(i => belongsTo(i, 'axel'));
+                const anjaSide = cluster.filter(i => belongsTo(i, 'anja'));
+                const isShared = axelSide.length > 0 && anjaSide.length > 0;
+
+                if (!isShared) {
+                    assignGeometry(cluster, 0, 100);
+                    cluster.forEach(item => { item.lane = null; });
+                    return;
+                }
+
+                // Two lanes: Axel on the left half, Anja on the right half.
+                assignGeometry(axelSide, 0, 50);
+                axelSide.forEach(i => { i._axelLeft = i.left; });
+
+                assignGeometry(anjaSide, 50, 50);
+
+                cluster.forEach(item => {
+                    const inAxel = belongsTo(item, 'axel');
+                    const inAnja = belongsTo(item, 'anja');
+
+                    if (inAxel && inAnja) {
+                        // A "both kids" class straddles the middle so it reads as shared
+                        const rightEdge = item.left + item.width;
+                        item.left = item._axelLeft;
+                        item.width = rightEdge - item._axelLeft;
+                        item.hoverLeft = 0;
+                        item.hoverWidth = 100;
+                        item.lane = 'both';
+                    } else {
+                        item.lane = inAxel ? 'axel' : 'anja';
+                    }
+                    item.splitCluster = true;
+                });
+            });
+
+            return items;
+        }
+
+        /*
+         * Shade the part of the day the kids are still in class.
+         * Both kids are in school until the earlier release time, so that band is
+         * full width. Between the two release times only the later kid is still in
+         * class, so that band covers just their side (Axel left / Anja right) and is
+         * labelled, making the 20-minute gap between pickups obvious.
+         */
+        function renderSchoolBlocks(column, day) {
+            const schedule = SCHOOL_END[day];
+            if (!schedule) return;
+
+            const axelEnd = timeToMinutes(schedule.axel);
+            const anjaEnd = timeToMinutes(schedule.anja);
+            const earlier = Math.min(axelEnd, anjaEnd);
+            const later = Math.max(axelEnd, anjaEnd);
+            const lateKid = axelEnd > anjaEnd ? 'axel' : 'anja';
+
+            const addBand = (from, to, className, label, side) => {
+                const top = Math.max(0, (from - DAY_START) / 60 * HOUR_HEIGHT);
+                const bottom = (Math.min(to, DAY_END) - DAY_START) / 60 * HOUR_HEIGHT;
+                if (bottom <= top) return;
+
+                const band = document.createElement('div');
+                band.className = className;
+                band.style.top = `${top}px`;
+                band.style.height = `${bottom - top}px`;
+                if (side === 'axel') { band.style.left = '0'; band.style.width = '50%'; }
+                else if (side === 'anja') { band.style.left = '50%'; band.style.width = '50%'; }
+                if (label) band.innerHTML = `<span>${label}</span>`;
+                column.appendChild(band);
+            };
+
+            // Both kids in school
+            addBand(DAY_START, earlier, 'school-block', 'In school');
+
+            // Only the later kid still in school
+            if (later > earlier) {
+                const name = lateKid === 'axel' ? 'Axel' : 'Anja';
+                addBand(earlier, later, 'school-block partial', name, lateKid);
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str == null ? '' : str).replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[ch]);
+        }
+
+        /*
+         * Find every point where one kid's class overlaps the other's, since there is
+         * only one driver. "hard" = both classes are registered (a real problem to
+         * solve). "soft" = at least one is still just a possibility (worth knowing
+         * before signing up, but not a problem yet).
+         */
+        function findConflicts() {
+            const conflicts = [];
+
+            DAYS.forEach(day => {
+                const dayItems = visibleActivities()
+                    .filter(a => a.days.includes(day))
+                    .map(a => ({ activity: a, start: timeToMinutes(a.startTime), end: timeToMinutes(a.endTime) }));
+
+                for (let i = 0; i < dayItems.length; i++) {
+                    for (let j = i + 1; j < dayItems.length; j++) {
+                        const a = dayItems[i];
+                        const b = dayItems[j];
+
+                        // A single "both kids" class is not a conflict with itself
+                        const aKids = a.activity.child === 'both' ? ['axel', 'anja'] : [a.activity.child];
+                        const bKids = b.activity.child === 'both' ? ['axel', 'anja'] : [b.activity.child];
+                        const differentKids = aKids.some(k => !bKids.includes(k)) || bKids.some(k => !aKids.includes(k));
+                        if (!differentKids) continue;
+
+                        const overlapStart = Math.max(a.start, b.start);
+                        const overlapEnd = Math.min(a.end, b.end);
+                        if (overlapEnd <= overlapStart) continue;
+
+                        conflicts.push({
+                            day,
+                            a: a.activity,
+                            b: b.activity,
+                            start: overlapStart,
+                            end: overlapEnd,
+                            severity: (a.activity.isRegistered && b.activity.isRegistered) ? 'hard' : 'soft'
+                        });
+                    }
+                }
+            });
+
+            return conflicts;
+        }
+
+        function renderCalendar() {
+            const calendar = document.getElementById('calendar');
+            calendar.innerHTML = '';
+
+            const bodyHeight = (DAY_END - DAY_START) / 60 * HOUR_HEIGHT;
+
+            // Dismissed clashes drop out here, which clears both the banner and the
+            // badges on the blocks in one go.
+            const allConflicts = findConflicts();
+            const conflicts = allConflicts.filter(c => !dismissedConflicts.has(conflictKey(c)));
+
+            // Map of "activityId|day" -> conflict severity, for badging blocks
+            const conflictIds = new Map();
+            conflicts.forEach(c => {
+                [c.a, c.b].forEach(act => {
+                    const key = act.id + '|' + c.day;
+                    if (conflictIds.get(key) !== 'hard') conflictIds.set(key, c.severity);
+                });
+            });
+
+            // --- Header row ---
+            const header = document.createElement('div');
+            header.className = 'cal-header';
+
+            const corner = document.createElement('div');
+            corner.className = 'corner';
+            header.appendChild(corner);
+
+            DAYS.forEach(day => {
+                const dayHeader = document.createElement('div');
+                dayHeader.className = 'day-header';
+                dayHeader.textContent = day.substring(0, 3);
+                header.appendChild(dayHeader);
+            });
+            calendar.appendChild(header);
+
+            // --- Body: one continuous column per day ---
+            const body = document.createElement('div');
+            body.className = 'cal-body';
+
+            // Time gutter with labels sitting on each hour line
+            const gutter = document.createElement('div');
+            gutter.className = 'time-gutter';
+            gutter.style.height = `${bodyHeight}px`;
+
+            const firstHour = DAY_START / 60;
+            const lastHour = DAY_END / 60;
+            for (let hour = firstHour; hour <= lastHour; hour++) {
+                const label = document.createElement('div');
+                label.className = 'hour-label';
+                label.textContent = formatHour(hour);
+                label.style.top = `${(hour * 60 - DAY_START) / 60 * HOUR_HEIGHT}px`;
+                // Keep the first and last labels fully inside the calendar
+                if (hour === firstHour) label.style.transform = 'translateY(0)';
+                else if (hour === lastHour) label.style.transform = 'translateY(-100%)';
+                gutter.appendChild(label);
+            }
+            body.appendChild(gutter);
+
+            DAYS.forEach(day => {
+                const column = document.createElement('div');
+                column.className = 'day-column';
+                column.style.height = `${bodyHeight}px`;
+
+                // Grey out the hours the kids are still in school
+                renderSchoolBlocks(column, day);
+
+                // Hour gridlines
+                for (let hour = DAY_START / 60 + 1; hour < DAY_END / 60; hour++) {
+                    const line = document.createElement('div');
+                    line.className = 'hour-line';
+                    line.style.top = `${(hour * 60 - DAY_START) / 60 * HOUR_HEIGHT}px`;
+                    column.appendChild(line);
+                }
+
+                // Every activity on this day, laid out as one continuous block each
+                const dayItems = visibleActivities()
+                    .filter(activity => activity.days.includes(day))
+                    .map(activity => ({
+                        activity,
+                        start: timeToMinutes(activity.startTime),
+                        end: timeToMinutes(activity.endTime)
+                    }))
+                    .filter(item => item.end > item.start);
+
+                const laid = layoutDay(dayItems);
+
+                // Dashed centre line wherever the column is split into kid lanes
+                laid.filter(i => i.splitCluster && i.lane !== 'both').forEach(() => {});
+                const splitRanges = laid.filter(i => i.splitCluster);
+                if (splitRanges.length) {
+                    const from = Math.max(DAY_START, Math.min(...splitRanges.map(i => i.start)));
+                    const to = Math.min(DAY_END, Math.max(...splitRanges.map(i => i.end)));
+                    if (to > from) {
+                        const divider = document.createElement('div');
+                        divider.className = 'lane-divider';
+                        divider.style.left = '50%';
+                        divider.style.top = `${(from - DAY_START) / 60 * HOUR_HEIGHT}px`;
+                        divider.style.height = `${(to - from) / 60 * HOUR_HEIGHT}px`;
+                        column.appendChild(divider);
+                    }
+                }
+
+                laid.forEach(item => {
+                    const { activity } = item;
+
+                    // Clamp to the visible 1 PM - 9 PM window
+                    const visibleStart = Math.max(item.start, DAY_START);
+                    const visibleEnd = Math.min(item.end, DAY_END);
+                    if (visibleEnd <= visibleStart) return;
+
+                    const actDiv = document.createElement('div');
+                    const classType = `activity-${activity.child}-${activity.isRegistered ? 'registered' : 'possible'}`;
+                    actDiv.className = `activity ${classType}`;
+                    if (!activity.isRegistered) actDiv.classList.add('possible');
+
+                    const top = (visibleStart - DAY_START) / 60 * HOUR_HEIGHT;
+                    const height = (visibleEnd - visibleStart) / 60 * HOUR_HEIGHT;
+                    actDiv.style.top = `${top}px`;
+                    actDiv.style.height = `${height - 2}px`;
+                    actDiv.style.left = `calc(${item.left}% + 2px)`;
+                    actDiv.style.width = `calc(${item.width}% - 4px)`;
+                    actDiv.style.zIndex = item.z || 2;
+
+                    // Hovering pops a squeezed block out to its full lane width
+                    actDiv.style.setProperty('--hover-left', `calc(${item.hoverLeft}% + 2px)`);
+                    actDiv.style.setProperty('--hover-width', `calc(${item.hoverWidth}% - 4px)`);
+
+                    if (height < 46) actDiv.classList.add('compact');
+                    if (item.width < 34) actDiv.classList.add('narrow');
+                    if (item.cascaded) actDiv.classList.add('cascaded');
+
+                    const conflict = conflictIds.get(activity.id + '|' + day);
+                    if (conflict) actDiv.classList.add(`conflict-${conflict}`);
+
+                    actDiv.innerHTML = `
+                        ${conflict ? `<span class="conflict-badge">${conflict === 'hard' ? '⚠️' : '◍'}</span>` : ''}
+                        <div class="activity-name">${escapeHtml(activity.name)}</div>
+                        <div class="activity-business">${escapeHtml(activity.business)}</div>
+                        <div class="activity-time">${formatTime(activity.startTime)} &ndash; ${formatTime(activity.endTime)}</div>
+                    `;
+                    actDiv.title = [
+                        `${activity.name} — ${activity.business}`,
+                        `${formatTime(activity.startTime)} – ${formatTime(activity.endTime)}`,
+                        activity.location ? `📍 ${activity.location}` : '',
+                        conflict === 'hard' ? '⚠️ Both kids booked at this time' : '',
+                        conflict === 'soft' ? 'Would clash with the other kid if registered' : ''
+                    ].filter(Boolean).join('\n');
+
+                    actDiv.onclick = (e) => {
+                        e.stopPropagation();
+                        editActivity(activity.id);
+                    };
+
+                    column.appendChild(actDiv);
+                });
+
+                body.appendChild(column);
+            });
+
+            calendar.appendChild(body);
+            renderConflictPanel(conflicts);
+            renderOptionGroups();
+            renderOutsideNotice();
+            renderRestoreRow(allConflicts.length - conflicts.length);
+        }
+
+        // Merge duplicate pairs (same two classes clashing on several days) into one row
+        function renderConflictPanel(conflicts) {
+            const panel = document.getElementById('conflictPanel');
+
+            if (!conflicts.length) {
+                panel.style.display = 'none';
+                panel.innerHTML = '';
+                return;
+            }
+
+            const grouped = new Map();
+            conflicts.forEach(c => {
+                const key = [c.a.id, c.b.id].sort().join('-') + '|' + c.start + '|' + c.end;
+                if (!grouped.has(key)) grouped.set(key, { ...c, days: [] });
+                grouped.get(key).days.push(c.day);
+            });
+
+            const rows = [...grouped.values()];
+            const hard = rows.filter(r => r.severity === 'hard');
+            const soft = rows.filter(r => r.severity === 'soft');
+
+            const rowHtml = (r) => {
+                const where = [r.a, r.b]
+                    .map(act => act.location ? `${escapeHtml(act.name)} @ ${escapeHtml(act.location)}` : escapeHtml(act.name))
+                    .join('  ↔  ');
+                return `<li>
+                    <strong>${r.days.map(d => d.substring(0, 3)).join(', ')}</strong>
+                    <span class="conflict-window">${formatTime(minutesToTime(r.start))}&ndash;${formatTime(minutesToTime(r.end))}</span>
+                    ${where}
+                </li>`;
+            };
+
+            panel.style.display = 'block';
+            panel.innerHTML = `
+                ${hard.length ? `
+                    <div class="conflict-section hard">
+                        <div class="banner-head">
+                            <h3>⚠️ Both kids booked at once &mdash; only one driver</h3>
+                            <button class="dismiss-btn" onclick="dismissConflicts('hard')">Dismiss</button>
+                        </div>
+                        <ul>${hard.map(rowHtml).join('')}</ul>
+                    </div>` : ''}
+                ${soft.length ? `
+                    <div class="conflict-section soft">
+                        <div class="banner-head">
+                            <h3>◍ Would clash if you register these</h3>
+                            <button class="dismiss-btn" onclick="dismissConflicts('soft')">Dismiss</button>
+                        </div>
+                        <ul>${soft.map(rowHtml).join('')}</ul>
+                    </div>` : ''}
+            `;
+        }
+
+        // Small escape hatch so a dismissal is never a one-way door
+        function renderRestoreRow(dismissedCount) {
+            const row = document.getElementById('restoreRow');
+            if (!dismissedCount) {
+                row.style.display = 'none';
+                return;
+            }
+            row.style.display = 'flex';
+            row.innerHTML = `
+                <button class="restore-btn" onclick="restoreConflicts()">
+                    Show ${dismissedCount} dismissed warning${dismissedCount === 1 ? '' : 's'}
+                </button>`;
+        }
+
+        /*
+         * Where one kid has several overlapping classes, the blocks have to fan and
+         * get clipped. This lists those groups in full text so the choice is always
+         * readable, whatever the column width.
+         */
+        function renderOptionGroups() {
+            const panel = document.getElementById('optionsPanel');
+            const groups = [];
+
+            DAYS.forEach(day => {
+                ['axel', 'anja'].forEach(kid => {
+                    const items = visibleActivities()
+                        .filter(a => a.days.includes(day) && (a.child === kid || a.child === 'both'))
+                        .map(a => ({ activity: a, start: timeToMinutes(a.startTime), end: timeToMinutes(a.endTime) }))
+                        .sort((a, b) => a.start - b.start);
+
+                    buildClusters(items).forEach(cluster => {
+                        // Only interesting when there is an actual choice to make
+                        if (cluster.length < 2) return;
+                        if (!cluster.some(i => !i.activity.isRegistered)) return;
+                        groups.push({ day, kid, cluster });
+                    });
+                });
+            });
+
+            if (!groups.length) {
+                panel.style.display = 'none';
+                panel.innerHTML = '';
+                return;
+            }
+
+            // Collapse identical groups that repeat across days
+            const merged = new Map();
+            groups.forEach(g => {
+                const key = g.kid + '|' + g.cluster.map(i => i.activity.id).sort().join(',');
+                if (!merged.has(key)) merged.set(key, { kid: g.kid, cluster: g.cluster, days: [] });
+                merged.get(key).days.push(g.day);
+            });
+
+            panel.style.display = 'block';
+            panel.innerHTML = `
+                <div class="options-section">
+                    <h3>◆ Overlapping choices for one kid</h3>
+                    <ul>
+                        ${[...merged.values()].map(g => `
+                            <li>
+                                <span class="kid-tag ${g.kid}">${g.kid === 'axel' ? 'Axel' : 'Anja'}</span>
+                                <strong>${g.days.map(d => d.substring(0, 3)).join(', ')}</strong>
+                                ${g.cluster.map(i => `
+                                    <span class="option-chip ${i.activity.isRegistered ? 'registered' : ''}" data-id="${i.activity.id}">
+                                        ${escapeHtml(i.activity.name)}
+                                        <em>${formatTime(i.activity.startTime)}&ndash;${formatTime(i.activity.endTime)}</em>
+                                    </span>`).join('')}
+                            </li>`).join('')}
+                    </ul>
+                </div>
+            `;
+
+            panel.querySelectorAll('.option-chip').forEach(chip => {
+                chip.onclick = () => editActivity(Number(chip.dataset.id));
+            });
+        }
+
+        // Anything scheduled outside the 1 PM - 9 PM window can't be drawn, so list it
+        function renderOutsideNotice() {
+            const box = document.getElementById('outsideNotice');
+            const outside = activities.filter(a => {
+                const start = timeToMinutes(a.startTime);
+                const end = timeToMinutes(a.endTime);
+                return start < DAY_START || end > DAY_END;
+            });
+
+            if (!outside.length) {
+                box.style.display = 'none';
+                box.innerHTML = '';
+                return;
+            }
+
+            box.style.display = 'block';
+            box.innerHTML = '<strong>Outside the 1 PM &ndash; 9 PM view:</strong> ' +
+                outside.map(a =>
+                    `<span class="outside-chip" data-id="${a.id}">${escapeHtml(a.name)} &middot; ` +
+                    `${a.days.map(d => d.substring(0, 3)).join(', ')} ` +
+                    `${formatTime(a.startTime)}&ndash;${formatTime(a.endTime)}</span>`
+                ).join(' ');
+
+            box.querySelectorAll('.outside-chip').forEach(chip => {
+                chip.onclick = () => editActivity(Number(chip.dataset.id));
+            });
+        }
+
+        function openModal(activityId = null) {
+            const modal = document.getElementById('modal');
+            const form = modal.querySelector('form');
+            const modalTitle = document.getElementById('modalTitle');
+            const deleteBtn = document.getElementById('deleteBtn');
+            const confirmBtn = document.getElementById('confirmBtn');
+
+            form.reset();
+            document.querySelectorAll('input[name="day"]').forEach(cb => cb.checked = false);
+            document.getElementById('isRegistered').checked = true;
+            document.getElementById('location').value = '';
+            document.getElementById('notes').value = '';
+            editingActivityId = null;
+
+            if (activityId) {
+                const activity = activities.find(a => a.id === activityId);
+                if (activity) {
+                    modalTitle.textContent = 'Activity Details';
+                    document.getElementById('activityName').value = activity.name;
+                    document.getElementById('business').value = activity.business;
+                    setTimePicker('start', activity.startTime);
+                    setTimePicker('end', activity.endTime);
+                    document.getElementById('child').value = activity.child;
+                    document.getElementById('isRegistered').checked = activity.isRegistered;
+                    document.getElementById('location').value = activity.location || '';
+                    document.getElementById('notes').value = activity.notes || '';
+
+                    activity.days.forEach(day => {
+                        document.querySelector(`input[name="day"][value="${day}"]`).checked = true;
+                    });
+
+                    deleteBtn.style.display = 'block';
+                    // Show confirm button only for possible activities
+                    confirmBtn.style.display = !activity.isRegistered ? 'block' : 'none';
+                    editingActivityId = activityId;
+                }
+            } else {
+                modalTitle.textContent = 'Add Activity';
+                setTimePicker('start', '15:30');
+                setTimePicker('end', '16:30');
+                deleteBtn.style.display = 'none';
+                confirmBtn.style.display = 'none';
+            }
+
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('active');
+            editingActivityId = null;
+        }
+
+        function saveActivity(event) {
+            event.preventDefault();
+
+            const selectedDays = Array.from(document.querySelectorAll('input[name="day"]:checked')).map(cb => cb.value);
+
+            if (selectedDays.length === 0) {
+                alert('Please select at least one day');
+                return;
+            }
+
+            const startTime = readTimePicker('start');
+            const endTime = readTimePicker('end');
+
+            if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+                alert('End time must be after start time.');
+                return;
+            }
+
+            const activityData = {
+                name: document.getElementById('activityName').value,
+                business: document.getElementById('business').value,
+                startTime: startTime,
+                endTime: endTime,
+                child: document.getElementById('child').value,
+                days: selectedDays,
+                isRegistered: document.getElementById('isRegistered').checked,
+                location: document.getElementById('location').value,
+                notes: document.getElementById('notes').value,
+            };
+
+            if (editingActivityId) {
+                const index = activities.findIndex(a => a.id === editingActivityId);
+                if (index !== -1) {
+                    activities[index] = { ...activities[index], ...activityData };
+                }
+            } else {
+                activities.push({
+                    id: Date.now(),
+                    ...activityData
+                });
+            }
+
+            const merged = mergeBothKidsClasses();
+            saveLocal();
+            renderCalendar();
+            closeModal();
+
+            if (merged) {
+                showToast('Matching Axel + Anja classes merged into one “Both kids” entry');
+            }
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('visible');
+            clearTimeout(showToast.timer);
+            showToast.timer = setTimeout(() => toast.classList.remove('visible'), 4000);
+        }
+
+        /* ---------------------------------------------------------------
+         * Saving
+         *
+         * Two layers, because they solve different problems:
+         *   1. Auto-save to this browser's local storage, so reopening the page keeps
+         *      your classes. Wrapped in try/catch -- some previews run the page in a
+         *      sandbox where storage throws, and there it simply degrades to
+         *      in-memory for the session.
+         *   2. "Share / Download", which writes a fresh copy of this page with your
+         *      classes baked into the <script id="scheduleData"> block. That file is
+         *      the whole app plus the data, so anyone you send it to can open it,
+         *      edit it, and send a copy back.
+         * --------------------------------------------------------------- */
+        const STORAGE_KEY = 'after-school-schedule-v1';
+
+        function stampOf(list) {
+            const str = JSON.stringify(list || []);
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+            }
+            return String(hash);
+        }
+
+        function bakedActivities() {
+            try {
+                const parsed = JSON.parse(document.getElementById('scheduleData').textContent);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (err) {
+                return [];
+            }
+        }
+
+        function saveLocal() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                    activities,
+                    bakedStamp: stampOf(bakedActivities()),
+                    savedAt: new Date().toISOString()
+                }));
+                setSaveStatus('Saved');
+            } catch (err) {
+                setSaveStatus('Not saved — use Share / Download', true);
+            }
+        }
+
+        function setSaveStatus(text, isWarning) {
+            const el = document.getElementById('saveStatus');
+            el.textContent = text;
+            el.classList.toggle('warn', !!isWarning);
+        }
+
+        function loadInitial() {
+            const baked = bakedActivities();
+            let stored = null;
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (raw) stored = JSON.parse(raw);
+            } catch (err) {
+                stored = null;
+            }
+
+            /* If the file was opened with different baked-in classes than the ones this
+               browser last saw, that means a newer shared copy arrived -- trust the
+               file. Otherwise keep the edits made in this browser. */
+            if (stored && Array.isArray(stored.activities) && stored.bakedStamp === stampOf(baked)) {
+                activities = stored.activities;
+            } else {
+                activities = baked;
+            }
+        }
+
+        // Rebuild this page as a standalone file with the current classes inside it
+        function exportShareablePage() {
+            const clone = document.documentElement.cloneNode(true);
+
+            // Blank out everything that gets regenerated on load
+            ['calendar', 'conflictPanel', 'optionsPanel', 'outsideNotice', 'restoreRow', 'toast']
+                .forEach(id => {
+                    const el = clone.querySelector('#' + id);
+                    if (el) el.innerHTML = '';
+                });
+
+            const modal = clone.querySelector('#modal');
+            if (modal) modal.classList.remove('active');
+
+            const status = clone.querySelector('#saveStatus');
+            if (status) status.textContent = '';
+
+            // Reset the view controls to their defaults
+            clone.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.kid === 'all');
+            });
+            const toggle = clone.querySelector('.toggle-label input');
+            if (toggle) toggle.setAttribute('checked', 'checked');
+
+            // Bake the data in
+            clone.querySelector('#scheduleData').textContent = JSON.stringify(activities, null, 2);
+
+            downloadFile(
+                '<!DOCTYPE html>\n' + clone.outerHTML,
+                'after-school-schedule.html',
+                'text/html'
+            );
+            showToast('Downloaded a copy with all your classes inside — send that file to anyone');
+        }
+
+        function downloadFile(contents, filename, mime) {
+            const blob = new Blob([contents], { type: mime });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        // Accepts either a shared .html copy of this page or a plain .json list
+        function importSchedule(input) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const text = String(reader.result);
+                    let parsed;
+
+                    if (/^\s*[\[{]/.test(text)) {
+                        parsed = JSON.parse(text);
+                    } else {
+                        const doc = new DOMParser().parseFromString(text, 'text/html');
+                        const block = doc.getElementById('scheduleData');
+                        if (!block) throw new Error('No schedule inside that page');
+                        parsed = JSON.parse(block.textContent);
+                    }
+
+                    if (!Array.isArray(parsed)) throw new Error('Not a schedule');
+
+                    activities = parsed;
+                    dismissedConflicts.clear();
+                    mergeBothKidsClasses();
+                    saveLocal();
+                    renderCalendar();
+                    showToast(`Loaded ${activities.length} class${activities.length === 1 ? '' : 'es'}`);
+                } catch (err) {
+                    alert("That file couldn't be read as a saved schedule.");
+                }
+                input.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        function editActivity(activityId) {
+            openModal(activityId);
+        }
+
+        function deleteActivity() {
+            if (editingActivityId && confirm('Delete this activity?')) {
+                activities = activities.filter(a => a.id !== editingActivityId);
+                saveLocal();
+                renderCalendar();
+                closeModal();
+            }
+        }
+
+        function confirmActivity() {
+            if (editingActivityId) {
+                const activity = activities.find(a => a.id === editingActivityId);
+                if (activity) {
+                    activity.isRegistered = true;
+                    saveLocal();
+                    renderCalendar();
+                    closeModal();
+                }
+            }
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('modal').addEventListener('click', (e) => {
+            if (e.target.id === 'modal') {
+                closeModal();
+            }
+        });
+
+        // Start-up
+        populateTimePickers();
+        loadInitial();
+        renderCalendar();
+        if (activities.length) setSaveStatus('Saved');
+    </script>
+
+</body></html>
